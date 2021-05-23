@@ -105,18 +105,11 @@ class OnnxTensorRTEngine():
 
     def load(self):
         import tensorrtutils
-
-        self.model = tensorrtutils.TrtModel("models/supercombo.trt")
-
+        self.model = tensorrtutils.TrtModel("models/supercombo.fp16.trt")
 
     def run(self, inputs):
-        #print(type(inputs))
-        #print(
         images, desire, state = inputs
-
         outputs = self.model(images, desire, state)
-        for o in outputs:
-            print(o.shape)
 
         return outputs 
 
