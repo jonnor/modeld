@@ -14,9 +14,57 @@ import time
 
 #matplotlib.use('Agg')
 camerafile = sys.argv[1]
-supercombo = load_model('models/supercombo.keras')
 
-#print(supercombo.summary())
+class KerasModel():
+    def __init__(self):
+        self.model = None
+
+    def load(self):
+        self.model = load_model('models/supercombo.keras')
+
+    def run(self, inputs):
+        return self.model.predict(inputs)
+
+
+class OnnxModel():
+    def __init__(self):
+        self.session = None
+        self.outputs_names = None
+        self.input_names = [ ]
+
+    def load(self):
+        import onnx
+        import onnxruntime as rt
+
+        self.session = rt.InferenceSession('models/supercombo.converted.onnx')
+
+        self.output_names = []
+        for p in self.session.get_outputs():
+            print('output', p)
+            self.output_names.append(str(p.name))
+
+        for p in self.session.get_inputs():
+            print('input', p)
+
+    def run(self, inputs):
+        #print(type(inputs))
+        #print(
+        images, desire, state = inputs
+
+        named_inputs = {
+            'vision_input_imgs': images.astype(np.float32),
+            'desire': desire.astype(np.float32),
+            'rnn_state': state.astype(np.float32),
+        }
+
+        return self.session.run(self.output_names, named_inputs)
+
+
+
+model = KerasModel()
+model = OnnxModel() 
+model.load()
+
 
 MAX_DISTANCE = 140.
 LANE_OFFSET = 1.8
@@ -73,7 +121,7 @@ while True:
   preproc_end = time.time()
 
   predict_start = time.time()
-  outs = supercombo.predict(inputs)
+  outs = model.run(inputs)
   parsed = parser(outs)
   predict_end = time.time()
 
@@ -81,7 +129,7 @@ while True:
   state = outs[-1]
   pose = outs[-2]   # For 6 DoF Callibration
 
-  visualize = False
+  visualize = True
 
   visualize_start = time.time()
   if visualize:
