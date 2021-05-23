@@ -10,6 +10,7 @@ from tensorflow.keras.models import load_model
 from common.tools.lib.parser import parser
 import cv2
 import sys
+import time
 
 #matplotlib.use('Agg')
 camerafile = sys.argv[1]
@@ -52,14 +53,16 @@ else:
   imgs_med_model[0] = transform_img(img_yuv, from_intr=eon_intrinsics, to_intr=medmodel_intrinsics, yuv=True,
                                     output_size=(512,256))
 
+last_time = time.time()
+
 while True:
-  plt.clf()
-  plt.title("lanes and path")
-  plt.xlim(0, 1200)
-  plt.ylim(800, 0)
+  read_start = time.time()
   (ret, current_frame) = cap.read()
   if not ret:
        break
+  read_end = time.time()
+
+  preproc_start = time.time()
   frame = current_frame.copy()
   img_yuv = cv2.cvtColor(current_frame, cv2.COLOR_BGR2YUV_I420)
   imgs_med_model[1] = transform_img(img_yuv, from_intr=eon_intrinsics, to_intr=medmodel_intrinsics, yuv=True,
@@ -67,23 +70,49 @@ while True:
   frame_tensors = frames_to_tensor(np.array(imgs_med_model)).astype(np.float32)/128.0 - 1.0
 
   inputs = [np.vstack(frame_tensors[0:2])[None], desire, state]
+  preproc_end = time.time()
+
+  predict_start = time.time()
   outs = supercombo.predict(inputs)
   parsed = parser(outs)
+  predict_end = time.time()
+
   # Important to refeed the state
   state = outs[-1]
   pose = outs[-2]   # For 6 DoF Callibration
-  frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-  plt.imshow(frame)
-  new_x_left, new_y_left = transform_points(x_left, parsed["lll"][0])
-  new_x_right, new_y_right = transform_points(x_left, parsed["rll"][0])
-  new_x_path, new_y_path = transform_points(x_left, parsed["path"][0])
-  plt.plot(new_x_left, new_y_left, label='transformed', color='w')
-  plt.plot(new_x_right, new_y_right, label='transformed', color='w')
-  plt.plot(new_x_path, new_y_path, label='transformed', color='green')
-  imgs_med_model[0]=imgs_med_model[1]
-  plt.pause(0.001)
-  if cv2.waitKey(10) & 0xFF == ord('q'):
-        break
+
+  visualize = False
+
+  visualize_start = time.time()
+  if visualize:
+      plt.clf()
+      plt.title("lanes and path")
+      plt.xlim(0, 1200)
+      plt.ylim(800, 0)
+
+      frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+      plt.imshow(frame)
+      
+      new_x_left, new_y_left = transform_points(x_left, parsed["lll"][0])
+      new_x_right, new_y_right = transform_points(x_left, parsed["rll"][0])
+      new_x_path, new_y_path = transform_points(x_left, parsed["path"][0])
+      plt.plot(new_x_left, new_y_left, label='transformed', color='w')
+      plt.plot(new_x_right, new_y_right, label='transformed', color='w')
+      plt.plot(new_x_path, new_y_path, label='transformed', color='green')
+      imgs_med_model[0]=imgs_med_model[1]
+      plt.pause(0.001)
+  visualize_end = time.time()
+
+  if visualize:
+      if cv2.waitKey(10) & 0xFF == ord('q'):
+            break
+
+  frame_dur = time.time() - last_time
+  last_time = time.time()
+
+  print(1/frame_dur, read_end-read_start, visualize_end-visualize_start, predict_end-predict_start, preproc_end-preproc_start)
+
+
 
 #plt.show()
   
