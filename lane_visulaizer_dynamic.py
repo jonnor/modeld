@@ -6,27 +6,29 @@ import matplotlib
 import matplotlib.pyplot as plt
 from common.lanes_image_space import transform_points
 import os
-from tensorflow.keras.models import load_model
 from common.tools.lib.parser import parser
 import cv2
 import sys
 import time
 
 #matplotlib.use('Agg')
-camerafile = sys.argv[1]
+#camerafile = sys.argv[1]
+camerafile = 'project_video.mp4'
 
 class KerasModel():
     def __init__(self):
         self.model = None
 
     def load(self):
+        #from tensorflow.keras.models import load_model
+
         self.model = load_model('models/supercombo.keras')
 
     def run(self, inputs):
         return self.model.predict(inputs)
 
 
-class OnnxModel():
+class OnnxCPUModel():
     def __init__(self):
         self.session = None
         self.outputs_names = None
@@ -59,10 +61,70 @@ class OnnxModel():
 
         return self.session.run(self.output_names, named_inputs)
 
+# XXX: untested
+class OnnxTensorRTModel():
+    def __init__(self):
+        self.session = None
+        self.outputs_names = None
+        self.input_names = [ ]
+
+    def load(self):
+        import onnx
+        import onnx_tensorrt.backend as backend
+
+        self.model = onnx.load('models/supercombo.converted.onnx')
+        self.engine = backend.prepare(model, device='CUDA:1')
+
+        self.output_names = []
+        for p in self.session.get_outputs():
+            print('output', p)
+            self.output_names.append(str(p.name))
+
+        for p in self.session.get_inputs():
+            print('input', p)
+
+    def run(self, inputs):
+        #print(type(inputs))
+        #print(
+        images, desire, state = inputs
+
+        named_inputs = {
+            'vision_input_imgs': images.astype(np.float32),
+            'desire': desire.astype(np.float32),
+            'rnn_state': state.astype(np.float32),
+        }
+
+        return self.engine.run(self.output_names, named_inputs)
 
 
-model = KerasModel()
-model = OnnxModel() 
+class OnnxTensorRTEngine():
+    def __init__(self):
+        self.session = None
+        self.outputs_names = None
+        self.input_names = [ ]
+
+    def load(self):
+        import tensorrtutils
+
+        self.model = tensorrtutils.TrtModel("models/supercombo.trt")
+
+
+    def run(self, inputs):
+        #print(type(inputs))
+        #print(
+        images, desire, state = inputs
+
+        outputs = self.model(images, desire, state)
+        for o in outputs:
+            print(o.shape)
+
+        return outputs 
+
+
+#model = KerasModel()
+#model = OnnxCPUModel() 
+#model = OnnxTensorRTModel() 
+model = OnnxTensorRTEngine()
 model.load()
 
 
@@ -129,7 +191,7 @@ while True:
   state = outs[-1]
   pose = outs[-2]   # For 6 DoF Callibration
 
-  visualize = True
+  visualize = False
 
   visualize_start = time.time()
   if visualize:
@@ -140,6 +202,7 @@ while True:
 
       frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
       plt.imshow(frame)
+      #print("frame", frame.shape, parsed)
       
       new_x_left, new_y_left = transform_points(x_left, parsed["lll"][0])
       new_x_right, new_y_right = transform_points(x_left, parsed["rll"][0])
